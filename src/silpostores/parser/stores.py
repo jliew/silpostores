@@ -1,6 +1,3 @@
-import pathlib
-from datetime import datetime
-
 import click
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -11,17 +8,6 @@ def debug_df(df):
 
     click.echo(df)
     click.echo(df.info())
-
-
-def update_data_file(output_file, new_df):
-    """Append new data to existing data file if doesn't already exist."""
-
-    # Create new file
-    f = pathlib.Path(output_file)
-    f = f.parent / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{f.name}"
-    new_df.to_csv(f, index=False)
-    click.echo(f"Created new CSV file {f}.")
-    return
 
 
 def find_data(soup):
