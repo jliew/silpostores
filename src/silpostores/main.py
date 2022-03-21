@@ -82,7 +82,7 @@ def parse_url(ctx, url='https://silpo.ua/graphql'):
         df = pd.DataFrame(body['data']['storesActivity'])
         debug_df(df)
 
-        mapping_df = pd.read_csv(pathlib.Path(r'src\silpostores\seeds\silpo-shops-mapping.csv'))
+        mapping_df = pd.read_csv(pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'silpo-shops-mapping.csv')
         df = df.merge(mapping_df, how='left', left_on='cityTitle', right_on='city_UKR')
         debug_df(df)
         
