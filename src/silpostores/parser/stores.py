@@ -3,13 +3,6 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 
-def debug_df(df):
-    """Print DataFrame info."""
-
-    click.echo(df)
-    click.echo(df.info())
-
-
 def find_data(soup):
     """Parse div rows containing div columns, put data into DataFrame.
     """

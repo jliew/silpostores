@@ -6,7 +6,7 @@ from urllib.request import Request, urlopen
 import click
 import pandas as pd
 
-from silpostores.parser.stores import debug_df, parse_html
+from silpostores.parser.stores import parse_html
 
 
 @click.group()
@@ -50,6 +50,13 @@ def create_data_file(output_file, new_df):
     return
 
 
+def debug_df(df):
+    """Print DataFrame info."""
+
+    click.echo(df)
+    click.echo(df.info())
+
+
 @cli.command("parse_file")
 @click.argument('html_file', type=click.STRING, required=True)
 @click.pass_context
@@ -82,12 +89,32 @@ def parse_url(ctx, url='https://silpo.ua/graphql'):
         df = pd.DataFrame(body['data']['storesActivity'])
         debug_df(df)
 
-        mapping_df = pd.read_csv(pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'silpo-shops-mapping.csv')
-        df = df.merge(mapping_df, how='left', left_on='cityTitle', right_on='city_UKR')
-        debug_df(df)
+        # normalise/clean apostrophe character in order to join with ocha values
+        df['cityTitle'] = df['cityTitle'].str.replace('’', '\'')
+
+        # get ocha xlsx
+        ocha_cols = [
+            'admin4Name_en', 'admin4Name_ua', 'admin4Name_ru', 'admin4Pcode',
+            'admin3Name_en', 'admin3Name_ua', 'admin3Name_ru', 'admin3Pcode',
+            'admin2Name_en', 'admin2Name_ua', 'admin2Name_ru', 'admin2Pcode',
+            'admin1Name_en', 'admin1Name_ua', 'admin1Name_ru', 'admin1Pcode'
+            ]
+        ocha_df = pd.read_excel(pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'ukr_adminboundaries_tabulardata.xlsx', sheet_name='Admin4')
+        ocha_df = ocha_df[ocha_cols]
+
+        # join on admin4Name_ua
+        merged_df = df.merge(ocha_df, how='left', left_on='cityTitle', right_on='admin4Name_ua')
+
+        # nullify shops which could be in multiple cities
+        merged_df['duplicated'] = merged_df.duplicated('title', keep=False)
+        merged_df = merged_df.drop_duplicates('title')
+        for col in ocha_cols:
+            merged_df.loc[merged_df['duplicated'], col] = None
+
+        debug_df(merged_df)
         
         if ctx.obj['OUTPUT_FILE']:
-            create_data_file(ctx.obj['OUTPUT_FILE'], df)
+            create_data_file(ctx.obj['OUTPUT_FILE'], merged_df)
 
 
 @cli.command("parse_silpo_shops_mapping")
