@@ -103,6 +103,7 @@ def parse_url(ctx, url='https://silpo.ua/graphql'):
         manual_df = pd.read_csv(pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'manual-mapping-overrides.csv', encoding='utf-8')
         (manual_matched_df, manual_remaining_df) = map_pcodes(df, manual_df, adm4_cols, left_on='title', right_on='titleManual',
             duplicated_col_name='duplicated_manual')
+        manual_matched_df = manual_matched_df.drop(['cityTitleManual', 'storeTitleManual', 'titleManual'], axis=1)
 
         # get ocha xlsx
         ocha_file = pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'ukr_adminboundaries_tabulardata.xlsx'
