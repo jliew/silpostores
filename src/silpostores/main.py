@@ -92,19 +92,25 @@ def parse_url(ctx, url='https://silpo.ua/graphql'):
         # normalise/clean apostrophe character in order to join with ocha values
         df['cityTitle'] = df['cityTitle'].str.replace('’', '\'')
 
-        # get ocha xlsx
-        ocha_file = pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'ukr_adminboundaries_tabulardata.xlsx'
-
-        # join on admin4Name_ua
         adm4_cols = [
             'admin4Name_en', 'admin4Name_ua', 'admin4Pcode',
             'admin3Name_en', 'admin3Name_ua', 'admin3Pcode',
             'admin2Name_en', 'admin2Name_ua', 'admin2Pcode',
             'admin1Name_en', 'admin1Name_ua', 'admin1Pcode'
             ]
+
+        # manual mapping overrides
+        manual_df = pd.read_csv(pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'manual-mapping-overrides.csv', encoding='utf-8')
+        (manual_matched_df, manual_remaining_df) = map_pcodes(df, manual_df, adm4_cols, left_on='title', right_on='titleManual',
+            duplicated_col_name='duplicated_manual')
+
+        # get ocha xlsx
+        ocha_file = pathlib.Path().cwd() / 'src' / 'silpostores' / 'seeds' / 'ukr_adminboundaries_tabulardata.xlsx'
+
+        # join on admin4Name_ua
         adm4_df = pd.read_excel(ocha_file, sheet_name='Admin4')
         adm4_df = adm4_df[adm4_cols]
-        (adm4_matched_df, adm4_remaining_df) = map_pcodes(df, adm4_df, adm4_cols)
+        (adm4_matched_df, adm4_remaining_df) = map_pcodes(manual_remaining_df, adm4_df, adm4_cols)
 
         # join on admin3Name_ua
         adm3_cols = [
@@ -114,7 +120,8 @@ def parse_url(ctx, url='https://silpo.ua/graphql'):
             ]
         adm3_df = pd.read_excel(ocha_file, sheet_name='Admin3')
         adm3_df = adm3_df[adm3_cols]
-        (adm3_matched_df, adm3_remaining_df) = map_pcodes(adm4_remaining_df, adm3_df, adm3_cols, right_on='admin3Name_ua', duplicated_col_name='duplicated_adm3')
+        (adm3_matched_df, adm3_remaining_df) = map_pcodes(adm4_remaining_df, adm3_df, adm3_cols,
+            right_on='admin3Name_ua', duplicated_col_name='duplicated_adm3')
 
         # join on admin2Name_ua
         adm2_cols = [
@@ -123,30 +130,44 @@ def parse_url(ctx, url='https://silpo.ua/graphql'):
             ]
         adm2_df = pd.read_excel(ocha_file, sheet_name='Admin2')
         adm2_df = adm2_df[adm2_cols]
-        (adm2_matched_df, adm2_remaining_df) = map_pcodes(adm3_remaining_df, adm2_df, adm2_cols, right_on='admin2Name_ua', duplicated_col_name='duplicated_adm2')
+        (adm2_matched_df, adm2_remaining_df) = map_pcodes(adm3_remaining_df, adm2_df, adm2_cols,
+            right_on='admin2Name_ua', duplicated_col_name='duplicated_adm2')
 
         # concat results
-        result_df = pd.concat([ adm4_matched_df, adm3_matched_df, adm2_matched_df ])
+        result_df = pd.concat([ manual_matched_df, adm4_matched_df, adm3_matched_df, adm2_matched_df ])
         click.echo(f"final matched: {result_df.shape}, remaining: {adm2_remaining_df.shape}")
         
         if ctx.obj['OUTPUT_FILE']:
             create_data_file(ctx.obj['OUTPUT_FILE'], pd.concat([ result_df, adm2_remaining_df ]))
 
 
-def map_pcodes(left_df, right_df, cols, left_on='cityTitle', right_on='admin4Name_ua', duplicated_col_name='duplicated_adm4', unique_col_name='title'):
+def map_pcodes(left_df, right_df, cols, left_on='cityTitle', right_on='admin4Name_ua',
+        duplicated_col_name='duplicated_adm4', unique_col_name='title', duplicated_keep='first'):
+    """Map pcodes on the right with admin names on the left.
+
+    duplicated_keep: passed to duplicated(). Set to False to 'reject' all ambiguous matches by nullifying
+    mapped fields.
+    """
+
     click.echo("---------------")
     click.echo(f"joining left: {left_df.shape} with right: {right_df.shape}")
-    # match on adm3, adm2 better
+    # match on adm3, adm2 better by normalising gender suffixes
     right_df[f"{right_on}_normalised"] = right_df[right_on].str.replace("ська", "").replace("ський", "")
-    merged_df = left_df.merge(right_df, how='left', left_on=left_on, right_on=f"{right_on}_normalised")
+    left_df[f"{left_on}_normalised"] = left_df[left_on].str.replace("ська", "").replace("ський", "")
+    merged_df = left_df.merge(right_df, how='left', left_on=f"{left_on}_normalised", right_on=f"{right_on}_normalised")
     merged_df = merged_df.drop(f"{right_on}_normalised", axis=1)
+    merged_df = merged_df.drop(f"{left_on}_normalised", axis=1)
+    left_df = left_df.drop(f"{left_on}_normalised", axis=1)
 
     # nullify shops which could be in multiple cities
-    merged_df[duplicated_col_name] = merged_df.duplicated(unique_col_name, keep=False)
-    merged_df = merged_df.drop_duplicates(unique_col_name)
+    merged_df[duplicated_col_name] = merged_df.duplicated(unique_col_name, keep=duplicated_keep)
     for col in cols:
         merged_df.loc[merged_df[duplicated_col_name], col] = None
     merged_df = merged_df.drop(duplicated_col_name, axis=1)
+
+    # remove results of multiple matches
+    merged_df = merged_df.drop_duplicates(unique_col_name)
+
     click.echo(f"merged_df.shape: {merged_df.shape}")
 
     # matched
